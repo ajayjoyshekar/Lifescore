@@ -81,11 +81,10 @@ The dashboard computes a score out of 100 using:
 - **Learning**
   - `>= 60 min` → 15 points
   - `>= 30 min` → 10 points
-- **Meals logged** (up to 25 points)
-  - Breakfast → 7 points
-  - Lunch → 6 points
-  - Snacks → 5 points
-  - Dinner → 7 points
+- **Nutrition** (up to 25 points, based on daily macros)
+  - Protein: 50g = 5 pts, 80g = 10 pts, 100g+ = 15 pts
+  - Carbs: 100g+ = 5 pts
+  - Fat: 30g+ = 5 pts
 
 The dashboard shows both the total score and a category‑by‑category breakdown.
 

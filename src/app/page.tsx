@@ -4,11 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
+type MealMacros = {
+  protein: number;
+  carbs: number;
+  fat: number;
+};
+
 type MealLog = {
-  breakfast: boolean;
-  lunch: boolean;
-  snacks: boolean;
-  dinner: boolean;
+  breakfast: MealMacros;
+  lunch: MealMacros;
+  snacks: MealMacros;
+  dinner: MealMacros;
 };
 
 type LifeMetrics = {
@@ -28,11 +34,13 @@ type ScoreBreakdown = {
   total: number;
 };
 
+const emptyMacros: MealMacros = { protein: 0, carbs: 0, fat: 0 };
+
 const emptyMeals: MealLog = {
-  breakfast: false,
-  lunch: false,
-  snacks: false,
-  dinner: false
+  breakfast: { ...emptyMacros },
+  lunch: { ...emptyMacros },
+  snacks: { ...emptyMacros },
+  dinner: { ...emptyMacros }
 };
 
 const emptyMetrics: LifeMetrics = {
@@ -61,12 +69,18 @@ function calculateScore(metrics: LifeMetrics): ScoreBreakdown {
   if (metrics.learning_minutes >= 60) learning = 15;
   else if (metrics.learning_minutes >= 30) learning = 10;
 
-  // Food: 25 pts max. Breakfast 7, Lunch 6, Snacks 5, Dinner 7
+  // Food: 25 pts max, based on daily macro totals
+  // Protein: 15 pts (50g=5, 80g=10, 100g+=15) | Carbs: 5 pts (100g+) | Fat: 5 pts (30g+)
+  const totalP = metrics.meals.breakfast.protein + metrics.meals.lunch.protein + metrics.meals.snacks.protein + metrics.meals.dinner.protein;
+  const totalC = metrics.meals.breakfast.carbs + metrics.meals.lunch.carbs + metrics.meals.snacks.carbs + metrics.meals.dinner.carbs;
+  const totalF = metrics.meals.breakfast.fat + metrics.meals.lunch.fat + metrics.meals.snacks.fat + metrics.meals.dinner.fat;
+
   let food = 0;
-  if (metrics.meals.breakfast) food += 7;
-  if (metrics.meals.lunch) food += 6;
-  if (metrics.meals.snacks) food += 5;
-  if (metrics.meals.dinner) food += 7;
+  if (totalP >= 100) food += 15;
+  else if (totalP >= 80) food += 10;
+  else if (totalP >= 50) food += 5;
+  if (totalC >= 100) food += 5;
+  if (totalF >= 30) food += 5;
 
   const total = water + sleep + exercise + learning + food;
 
@@ -138,14 +152,13 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("daily_logs")
         .select(
-          "id, water_ml, sleep_hours, exercise_minutes, learning_minutes, breakfast_logged, lunch_logged, snacks_logged, dinner_logged"
+          "id, water_ml, sleep_hours, exercise_minutes, learning_minutes, breakfast_protein, breakfast_carbs, breakfast_fat, lunch_protein, lunch_carbs, lunch_fat, snacks_protein, snacks_carbs, snacks_fat, dinner_protein, dinner_carbs, dinner_fat"
         )
         .eq("user_id", userId)
         .eq("date", today)
         .maybeSingle();
 
       if (error && error.code !== "PGRST116") {
-        // ignore "no rows" error code
         console.error(error);
       }
 
@@ -157,10 +170,10 @@ export default function HomePage() {
           exercise_minutes: data.exercise_minutes ?? 0,
           learning_minutes: data.learning_minutes ?? 0,
           meals: {
-            breakfast: data.breakfast_logged ?? false,
-            lunch: data.lunch_logged ?? false,
-            snacks: data.snacks_logged ?? false,
-            dinner: data.dinner_logged ?? false
+            breakfast: { protein: Number(data.breakfast_protein ?? 0), carbs: Number(data.breakfast_carbs ?? 0), fat: Number(data.breakfast_fat ?? 0) },
+            lunch: { protein: Number(data.lunch_protein ?? 0), carbs: Number(data.lunch_carbs ?? 0), fat: Number(data.lunch_fat ?? 0) },
+            snacks: { protein: Number(data.snacks_protein ?? 0), carbs: Number(data.snacks_carbs ?? 0), fat: Number(data.snacks_fat ?? 0) },
+            dinner: { protein: Number(data.dinner_protein ?? 0), carbs: Number(data.dinner_carbs ?? 0), fat: Number(data.dinner_fat ?? 0) }
           }
         });
       } else {
@@ -222,10 +235,13 @@ export default function HomePage() {
     }));
   };
 
-  const handleMealChange = (meal: keyof MealLog, value: boolean) => {
+  const handleMealMacroChange = (meal: keyof MealLog, macro: keyof MealMacros, value: number) => {
     setMetrics((prev) => ({
       ...prev,
-      meals: { ...prev.meals, [meal]: value }
+      meals: {
+        ...prev.meals,
+        [meal]: { ...prev.meals[meal], [macro]: value }
+      }
     }));
   };
 
@@ -242,10 +258,18 @@ export default function HomePage() {
         sleep_hours: metrics.sleep_hours,
         exercise_minutes: metrics.exercise_minutes,
         learning_minutes: metrics.learning_minutes,
-        breakfast_logged: metrics.meals.breakfast,
-        lunch_logged: metrics.meals.lunch,
-        snacks_logged: metrics.meals.snacks,
-        dinner_logged: metrics.meals.dinner,
+        breakfast_protein: metrics.meals.breakfast.protein,
+        breakfast_carbs: metrics.meals.breakfast.carbs,
+        breakfast_fat: metrics.meals.breakfast.fat,
+        lunch_protein: metrics.meals.lunch.protein,
+        lunch_carbs: metrics.meals.lunch.carbs,
+        lunch_fat: metrics.meals.lunch.fat,
+        snacks_protein: metrics.meals.snacks.protein,
+        snacks_carbs: metrics.meals.snacks.carbs,
+        snacks_fat: metrics.meals.snacks.fat,
+        dinner_protein: metrics.meals.dinner.protein,
+        dinner_carbs: metrics.meals.dinner.carbs,
+        dinner_fat: metrics.meals.dinner.fat,
         score: score.total
       };
 
@@ -465,10 +489,10 @@ export default function HomePage() {
                   detail={`${metrics.learning_minutes || 0} min`}
                 />
                 <BreakdownItem
-                  label="Meals"
+                  label="Nutrition"
                   value={score.food}
                   max={25}
-                  detail={`${[metrics.meals.breakfast && "B", metrics.meals.lunch && "L", metrics.meals.snacks && "S", metrics.meals.dinner && "D"].filter(Boolean).join(", ") || "None logged"}`}
+                  detail={`P ${metrics.meals.breakfast.protein + metrics.meals.lunch.protein + metrics.meals.snacks.protein + metrics.meals.dinner.protein}g · C ${metrics.meals.breakfast.carbs + metrics.meals.lunch.carbs + metrics.meals.snacks.carbs + metrics.meals.dinner.carbs}g · F ${metrics.meals.breakfast.fat + metrics.meals.lunch.fat + metrics.meals.snacks.fat + metrics.meals.dinner.fat}g`}
                 />
               </div>
             </div>
@@ -566,31 +590,31 @@ export default function HomePage() {
                 <div className="col-span-1 sm:col-span-2">
                   <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
                     <p className="text-xs font-medium text-slate-200">
-                      Meals logged
+                      Food intake (macros)
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-400">
-                      Log each meal for up to 25 pts (B 7, L 6, S 5, D 7).
+                      Enter protein, carbs, fat (g) per meal. Score: P 50/80/100g, C 100g+, F 30g+.
                     </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <MealToggle
+                    <div className="mt-3 space-y-3">
+                      <MealMacroInput
                         label="Breakfast"
-                        checked={metrics.meals.breakfast}
-                        onChange={(v) => handleMealChange("breakfast", v)}
+                        macros={metrics.meals.breakfast}
+                        onChange={(m, v) => handleMealMacroChange("breakfast", m, v)}
                       />
-                      <MealToggle
+                      <MealMacroInput
                         label="Lunch"
-                        checked={metrics.meals.lunch}
-                        onChange={(v) => handleMealChange("lunch", v)}
+                        macros={metrics.meals.lunch}
+                        onChange={(m, v) => handleMealMacroChange("lunch", m, v)}
                       />
-                      <MealToggle
+                      <MealMacroInput
                         label="Snacks"
-                        checked={metrics.meals.snacks}
-                        onChange={(v) => handleMealChange("snacks", v)}
+                        macros={metrics.meals.snacks}
+                        onChange={(m, v) => handleMealMacroChange("snacks", m, v)}
                       />
-                      <MealToggle
+                      <MealMacroInput
                         label="Dinner"
-                        checked={metrics.meals.dinner}
-                        onChange={(v) => handleMealChange("dinner", v)}
+                        macros={metrics.meals.dinner}
+                        onChange={(m, v) => handleMealMacroChange("dinner", m, v)}
                       />
                     </div>
                   </div>
@@ -676,29 +700,52 @@ function FieldCard(props: {
   );
 }
 
-function MealToggle(props: {
+function MealMacroInput(props: {
   label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+  macros: MealMacros;
+  onChange: (macro: keyof MealMacros, value: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
-      <span className="text-[11px] font-medium text-slate-200">{props.label}</span>
-      <button
-        type="button"
-        onClick={() => props.onChange(!props.checked)}
-        className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border text-[10px] font-medium transition ${
-          props.checked
-            ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
-            : "border-slate-700 bg-slate-900/80 text-slate-300"
-        }`}
-      >
-        <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${
-            props.checked ? "translate-x-5" : "translate-x-1"
-          }`}
-        />
-      </button>
+    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+      <p className="mb-2 text-[11px] font-medium text-slate-200">{props.label}</p>
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="text-[10px] text-slate-400">P (g)</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={props.macros.protein}
+            onChange={(e) => props.onChange("protein", Number(e.target.value) || 0)}
+            className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-500/40"
+            placeholder="0"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-400">C (g)</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={props.macros.carbs}
+            onChange={(e) => props.onChange("carbs", Number(e.target.value) || 0)}
+            className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-500/40"
+            placeholder="0"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-400">F (g)</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={props.macros.fat}
+            onChange={(e) => props.onChange("fat", Number(e.target.value) || 0)}
+            className="mt-0.5 w-full rounded-lg border border-slate-700 bg-slate-950/80 px-2 py-1.5 text-xs text-slate-50 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-500/40"
+            placeholder="0"
+          />
+        </div>
+      </div>
     </div>
   );
 }
