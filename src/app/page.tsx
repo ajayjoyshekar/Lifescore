@@ -4,12 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
+type MealLog = {
+  breakfast: boolean;
+  lunch: boolean;
+  snacks: boolean;
+  dinner: boolean;
+};
+
 type LifeMetrics = {
   water_ml: number;
   sleep_hours: number;
   exercise_minutes: number;
   learning_minutes: number;
-  food_logged: boolean;
+  meals: MealLog;
 };
 
 type ScoreBreakdown = {
@@ -21,12 +28,19 @@ type ScoreBreakdown = {
   total: number;
 };
 
+const emptyMeals: MealLog = {
+  breakfast: false,
+  lunch: false,
+  snacks: false,
+  dinner: false
+};
+
 const emptyMetrics: LifeMetrics = {
   water_ml: 0,
   sleep_hours: 0,
   exercise_minutes: 0,
   learning_minutes: 0,
-  food_logged: false
+  meals: { ...emptyMeals }
 };
 
 function calculateScore(metrics: LifeMetrics): ScoreBreakdown {
@@ -47,7 +61,12 @@ function calculateScore(metrics: LifeMetrics): ScoreBreakdown {
   if (metrics.learning_minutes >= 60) learning = 15;
   else if (metrics.learning_minutes >= 30) learning = 10;
 
-  const food = metrics.food_logged ? 25 : 0;
+  // Food: 25 pts max. Breakfast 7, Lunch 6, Snacks 5, Dinner 7
+  let food = 0;
+  if (metrics.meals.breakfast) food += 7;
+  if (metrics.meals.lunch) food += 6;
+  if (metrics.meals.snacks) food += 5;
+  if (metrics.meals.dinner) food += 7;
 
   const total = water + sleep + exercise + learning + food;
 
@@ -119,7 +138,7 @@ export default function HomePage() {
       const { data, error } = await supabase
         .from("daily_logs")
         .select(
-          "id, water_ml, sleep_hours, exercise_minutes, learning_minutes, food_logged"
+          "id, water_ml, sleep_hours, exercise_minutes, learning_minutes, breakfast_logged, lunch_logged, snacks_logged, dinner_logged"
         )
         .eq("user_id", userId)
         .eq("date", today)
@@ -137,7 +156,12 @@ export default function HomePage() {
           sleep_hours: data.sleep_hours ?? 0,
           exercise_minutes: data.exercise_minutes ?? 0,
           learning_minutes: data.learning_minutes ?? 0,
-          food_logged: data.food_logged ?? false
+          meals: {
+            breakfast: data.breakfast_logged ?? false,
+            lunch: data.lunch_logged ?? false,
+            snacks: data.snacks_logged ?? false,
+            dinner: data.dinner_logged ?? false
+          }
         });
       } else {
         setLogId(null);
@@ -198,6 +222,13 @@ export default function HomePage() {
     }));
   };
 
+  const handleMealChange = (meal: keyof MealLog, value: boolean) => {
+    setMetrics((prev) => ({
+      ...prev,
+      meals: { ...prev.meals, [meal]: value }
+    }));
+  };
+
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -211,7 +242,10 @@ export default function HomePage() {
         sleep_hours: metrics.sleep_hours,
         exercise_minutes: metrics.exercise_minutes,
         learning_minutes: metrics.learning_minutes,
-        food_logged: metrics.food_logged,
+        breakfast_logged: metrics.meals.breakfast,
+        lunch_logged: metrics.meals.lunch,
+        snacks_logged: metrics.meals.snacks,
+        dinner_logged: metrics.meals.dinner,
         score: score.total
       };
 
@@ -431,10 +465,10 @@ export default function HomePage() {
                   detail={`${metrics.learning_minutes || 0} min`}
                 />
                 <BreakdownItem
-                  label="Food logged"
+                  label="Meals"
                   value={score.food}
                   max={25}
-                  detail={metrics.food_logged ? "Logged" : "Not logged"}
+                  detail={`${[metrics.meals.breakfast && "B", metrics.meals.lunch && "L", metrics.meals.snacks && "S", metrics.meals.dinner && "D"].filter(Boolean).join(", ") || "None logged"}`}
                 />
               </div>
             </div>
@@ -530,34 +564,35 @@ export default function HomePage() {
                 </FieldCard>
 
                 <div className="col-span-1 sm:col-span-2">
-                  <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3">
-                    <div>
-                      <p className="text-xs font-medium text-slate-200">
-                        Food logged
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
-                        Simply confirm you tracked what you ate.
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleMetricChange("food_logged", !metrics.food_logged)
-                      }
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full border text-[10px] font-medium transition ${
-                        metrics.food_logged
-                          ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
-                          : "border-slate-700 bg-slate-900/80 text-slate-300"
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition ${
-                          metrics.food_logged
-                            ? "translate-x-6"
-                            : "translate-x-1"
-                        }`}
+                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+                    <p className="text-xs font-medium text-slate-200">
+                      Meals logged
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Log each meal for up to 25 pts (B 7, L 6, S 5, D 7).
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <MealToggle
+                        label="Breakfast"
+                        checked={metrics.meals.breakfast}
+                        onChange={(v) => handleMealChange("breakfast", v)}
                       />
-                    </button>
+                      <MealToggle
+                        label="Lunch"
+                        checked={metrics.meals.lunch}
+                        onChange={(v) => handleMealChange("lunch", v)}
+                      />
+                      <MealToggle
+                        label="Snacks"
+                        checked={metrics.meals.snacks}
+                        onChange={(v) => handleMealChange("snacks", v)}
+                      />
+                      <MealToggle
+                        label="Dinner"
+                        checked={metrics.meals.dinner}
+                        onChange={(v) => handleMealChange("dinner", v)}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -637,6 +672,33 @@ function FieldCard(props: {
         )}
       </div>
       {props.children}
+    </div>
+  );
+}
+
+function MealToggle(props: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2">
+      <span className="text-[11px] font-medium text-slate-200">{props.label}</span>
+      <button
+        type="button"
+        onClick={() => props.onChange(!props.checked)}
+        className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border text-[10px] font-medium transition ${
+          props.checked
+            ? "border-emerald-400 bg-emerald-500/20 text-emerald-200"
+            : "border-slate-700 bg-slate-900/80 text-slate-300"
+        }`}
+      >
+        <span
+          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition ${
+            props.checked ? "translate-x-5" : "translate-x-1"
+          }`}
+        />
+      </button>
     </div>
   );
 }

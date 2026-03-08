@@ -81,8 +81,11 @@ The dashboard computes a score out of 100 using:
 - **Learning**
   - `>= 60 min` → 15 points
   - `>= 30 min` → 10 points
-- **Food logged**
-  - `true` → 25 points
+- **Meals logged** (up to 25 points)
+  - Breakfast → 7 points
+  - Lunch → 6 points
+  - Snacks → 5 points
+  - Dinner → 7 points
 
 The dashboard shows both the total score and a category‑by‑category breakdown.
 
